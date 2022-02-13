@@ -13,8 +13,8 @@ file_names = [
 def load_data(data_path=competition_directory, files=file_names):
     dtypes = {"article_id": str}
     loaded_dfs = []
-    for file_name in file_names:
+    for file_name in files:
         file_path = os.path.join(data_path, file_name)
-        loaded_dfs.append(pd.read_csv(file_path), dtype=dtypes)
+        loaded_dfs.append(pd.read_csv(file_path, dtype=dtypes))
 
     return loaded_dfs
