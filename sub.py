@@ -51,3 +51,32 @@ def create_sub(
     sub["prediction"] = sub["prediction"].apply(lambda x: " ".join(x))
 
     return sub
+
+
+def combine_subs(subs: list):
+    """
+    combine a list of subs
+    - concatenate predictions together for each customer id
+    - deduplicate
+    - take first 12
+    """
+    # this is what we'll return
+    combining_subs = subs[0].copy()
+
+    # first predictions
+    combining_preds = combining_subs["prediction"]
+    combining_preds = combining_preds.apply(lambda x: x.split(" "))
+
+    # loop/add other ones
+    for next_sub in subs[1:]:
+        next_pred = next_sub["prediction"]
+        combining_preds = combining_preds + next_pred.apply(lambda x: x.split(" "))
+
+    # back into submission form
+    combining_preds = combining_preds.apply(remove_duplicates_list)
+    combining_preds = combining_preds.apply(lambda x: x[:12])
+    combining_preds = combining_preds.apply(lambda x: " ".join(x))
+
+    combining_subs["prediction"] = combining_preds
+
+    return combining_subs
