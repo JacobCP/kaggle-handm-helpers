@@ -12,3 +12,57 @@ def ground_truth(transactions_df):
     gt = customer_trans.reset_index()
 
     return gt
+
+
+def comp_average_precision(
+    data_true: pd.Series,
+    data_predicted: pd.Series,
+) -> float:
+    """
+    :param data_true: items that were actually purchased by user
+    :param data_predicted: items we recommended to user
+    """
+
+    # for this competition, we don't score ones without any purchases
+    data_true = data_true[data_true.notna()]
+    data_true = data_true[data_true.apply(len) > 0]
+
+    if len(data_true) == 0:
+        raise ValueError("data_true is empty")
+
+    # convert to df so we can use `apply`
+    eval_df = pd.DataFrame({"true": data_true})
+    eval_df["predicted"] = data_predicted  # this way only get ones in data_true
+
+    # replace na predictions with empty list
+    eval_df["predicted"] = eval_df["predicted"].apply(
+        lambda x: x if isinstance(x, list) else []
+    )
+
+    # getting the counts of true/predicted
+    eval_df["n_items_true"] = eval_df["true"].apply(len)
+    eval_df["n_items_predicted"] = eval_df["predicted"].apply(lambda x: min(len(x), 12))
+
+    # ignore zero predicted (zero true is not even included...)
+    non_zero_filter = eval_df["n_items_predicted"] > 0
+    eval_df = eval_df[non_zero_filter].copy()
+
+    def row_precision(items_true, items_predicted, n_items_predicted, n_items_true):
+        n_correct_items = 0
+        precision = 0.0
+
+        for item_idx in range(n_items_predicted):
+            if items_predicted[item_idx] in items_true:
+                n_correct_items += 1
+                precision += n_correct_items / (item_idx + 1)
+
+        return precision / min(n_items_true, 12)
+
+    eval_df["row_precision"] = eval_df.apply(
+        lambda x: row_precision(
+            x["true"], x["predicted"], x["n_items_predicted"], x["n_items_true"]
+        ),
+        axis=1,
+    )
+
+    return eval_df["row_precision"].sum() / len(data_true)
