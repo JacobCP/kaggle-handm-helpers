@@ -17,37 +17,22 @@ def ground_truth(transactions_df):
 
 
 def train_validation_split(
-    transactions_df: pd.DataFrame, validation_date: Union[str, pd.Timestamp]
+    transactions_df: pd.DataFrame, validation_week_number: int, train_week_length=None
 ):
     """
     split transaction_df into train/validation
-    validation_df will be week starting on Wednesday on or before date provided
-
-    (because test week starts on a Wednesday)
+    use week numbers created already using fe.day_week_numbers() function
     """
 
-    # get the wednesday before for start_date
-    validation_date = pd.to_datetime(validation_date)
-    weekday = datetime.weekday(validation_date)
-    weekday += 7  # so we don't have negatives to deal with
-    validation_start_date = validation_date - timedelta((weekday - 2) % 7)
-
-    # end date is 6 days later
-    validation_end_date = validation_start_date + timedelta(6)
-
-    # convert back to yyyy-mm-dd formatted strings
-    validation_start_date = validation_start_date.strftime("%Y-%m-%d")
-    validation_end_date = validation_end_date.strftime("%Y-%m-%d")
-
-    # use dates to filter/create train/validation dfs
-    train_df = transactions_df.query(f"t_dat < '{validation_start_date}'").copy()
+    # use week numbers to filter/create train/validation dfs
     validation_df = transactions_df.query(
-        f"t_dat >= '{validation_start_date}' & t_dat <= '{validation_end_date}'"
+        f"week_number=={validation_week_number}"
     ).copy()
-
-    print(
-        f"Validation week is Wednesday, {validation_start_date} through Tuesday, {validation_end_date}"
-    )
+    train_df = transactions_df.query(f"week_number < {validation_week_number}").copy()
+    if train_week_length is not None:
+        train_df = train_df.query(
+            f"week_number >= {validation_week_number - train_week_length}"
+        ).copy()
 
     return train_df, validation_df
 
