@@ -1,6 +1,4 @@
-from datetime import datetime, timedelta
 import pandas as pd
-from typing import Union
 
 
 def ground_truth(transactions_df):
@@ -16,8 +14,8 @@ def ground_truth(transactions_df):
     return gt
 
 
-def train_validation_split(
-    transactions_df: pd.DataFrame, validation_week_number: int, train_week_length=None
+def feature_label_split(
+    transactions_df: pd.DataFrame, label_week_number: int, feature_week_length=None
 ):
     """
     split transaction_df into train/validation
@@ -25,16 +23,14 @@ def train_validation_split(
     """
 
     # use week numbers to filter/create train/validation dfs
-    validation_df = transactions_df.query(
-        f"week_number=={validation_week_number}"
-    ).copy()
-    train_df = transactions_df.query(f"week_number < {validation_week_number}").copy()
-    if train_week_length is not None:
-        train_df = train_df.query(
-            f"week_number >= {validation_week_number - train_week_length}"
+    label_df = transactions_df.query(f"week_number=={label_week_number}").copy()
+    features_df = transactions_df.query(f"week_number < {label_week_number}").copy()
+    if feature_week_length is not None:
+        features_df = features_df.query(
+            f"week_number >= {label_week_number - feature_week_length}"
         ).copy()
 
-    return train_df, validation_df
+    return features_df, label_df
 
 
 def comp_average_precision(
