@@ -1,4 +1,5 @@
 import pandas as pd
+from typing import List
 
 
 def ground_truth(transactions_df):
@@ -31,6 +32,27 @@ def feature_label_split(
         ).copy()
 
     return features_df, label_df
+
+
+def report_candidates(candidates: List[str], ground_truth_candidates: List[str]):
+    """
+    Calculate recall and candidates factor (num(candidates) / num(ground_truth_candidates))
+    """
+
+    num_candidates = len(candidates)
+    num_ground_truth = len(ground_truth_candidates)
+    num_true_candidates = len(set(ground_truth_candidates) & set(candidates))
+    recall = num_true_candidates / num_ground_truth
+    candidates_factor = int(len(candidates) / num_true_candidates)
+
+    print(
+        f"candidates factor: {candidates_factor:,} ({num_candidates:,}/{num_ground_truth:,})"
+    )
+    print(
+        f"candidates recall: {recall:.2%} ({num_true_candidates:,}/{num_ground_truth:,})"
+    )
+
+    return recall, candidates_factor
 
 
 def comp_average_precision(
