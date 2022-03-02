@@ -1,7 +1,39 @@
 import math
+import pickle as pkl
 from datetime import timedelta
 
 import pandas as pd
+
+
+def reduce_customer_id_memory(customers_df, other_dfs):
+    """
+    reduces memory in dfs in place
+
+    returns path to pickled customer_id mapping, for submission use
+    """
+    ####
+    # customer id compression
+
+    # save the mapping we'll need to get back
+    index_to_id_dict = dict(zip(customers_df.index, customers_df["customer_id"]))
+    file_path = "id_to_index_dict.pkl"
+    with open(file_path, "wb") as f:
+        pkl.dump(index_to_id_dict, f)
+    del index_to_id_dict
+
+    # now compress
+    id_to_index_dict = dict(zip(customers_df["customer_id"], customers_df.index))
+    customers_df["customer_id"] = (
+        customers_df["customer_id"].map(id_to_index_dict).astype("int32")
+    )
+
+    for other_df in other_dfs:
+        if "customer_id" in other_df:
+            other_df["customer_id"] = (
+                other_df["customer_id"].map(id_to_index_dict).astype("int32")
+            )
+
+    return file_path
 
 
 def day_week_numbers(dates: pd.Series):

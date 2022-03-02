@@ -1,6 +1,8 @@
-import pandas as pd
 from typing import Union, List
 import copy
+import pickle as pkl
+
+import pandas as pd
 
 
 def remove_duplicates_list(orig_list: list) -> list:
@@ -21,6 +23,7 @@ def create_sub(
     customer_ids: Union[List[str], pd.Series],
     predictions: Union[dict, pd.Series],
     default_predictions: List[str] = [],
+    index_to_id_dict_path: str = None,
 ) -> pd.Series:
     """
     given predictions for some customers,
@@ -36,6 +39,7 @@ def create_sub(
     customer_ids: all the article ids we need to submit for
     predictions: pd.Series where index=customer_id and values=list of predictions
     default_predictions: predictions to augment customer_id predictions with, until 12
+    index_to_id_dict_path: mapping to get from number index to the customer_id for submission
     """
 
     # original predictions or empty list
@@ -48,7 +52,14 @@ def create_sub(
     sub["prediction"] = sub["prediction"].apply(lambda x: x + default_predictions)
     sub["prediction"] = sub["prediction"].apply(remove_duplicates_list)
     sub["prediction"] = sub["prediction"].apply(lambda x: x[:12])
-    sub["prediction"] = sub["prediction"].apply(lambda x: " ".join(x))
+    sub["prediction"] = sub["prediction"].apply(
+        lambda x: " ".join(["0" + str(article_id) for article_id in x])
+    )
+
+    if index_to_id_dict_path is not None:
+        index_to_id_dict = pkl.load(open(index_to_id_dict_path, "rb"))
+
+    sub["customer_id"] = sub["customer_id"].map(index_to_id_dict)
 
     return sub
 

@@ -40,7 +40,7 @@ def create_candidates(transactions_df, customers_df, articles_df):
 
     popular_items_cand = list(
         [
-            customer_id + "_" + article_id
+            (customer_id, article_id)
             for customer_id in customers_df["customer_id"]
             for article_id in recent_popular_items
         ]
@@ -66,10 +66,10 @@ def add_features_to_candidates(candidates, features, customers_df, articles_df):
     """
     candidates_df = pd.DataFrame({"customer_article": candidates})
     candidates_df["customer_id"] = candidates_df["customer_article"].apply(
-        lambda x: x.split("_")[0]
+        lambda x: x[0]
     )
     candidates_df["article_id"] = candidates_df["customer_article"].apply(
-        lambda x: x.split("_")[1]
+        lambda x: x[1]
     )
 
     for col_name in features:
