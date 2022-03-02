@@ -17,14 +17,19 @@ def day_week_numbers(dates: pd.Series):
     day_weeks: pd.Series of week numbers each day in original pd.Series is in
 
     """
-    all_dates = pd.to_datetime(dates)
-    numbered_days = all_dates - all_dates.min() + timedelta(1)
+    pd_dates = pd.to_datetime(dates)
+
+    unique_dates = pd.Series(pd_dates.unique())
+    numbered_days = unique_dates - unique_dates.min() + timedelta(1)
     numbered_days = numbered_days.apply(lambda x: x.days)
     extra_days = numbered_days.max() % 7
     numbered_days -= extra_days
     day_weeks = (numbered_days / 7).apply(math.ceil)
+    day_weeks_map = dict(zip(unique_dates, day_weeks))
 
-    return day_weeks
+    all_day_weeks = pd_dates.map(day_weeks_map)
+
+    return all_day_weeks
 
 
 def year_week_numbers(weeks: pd.Series):
