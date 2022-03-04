@@ -22,8 +22,8 @@ def remove_duplicates_list(orig_list: list) -> list:
 def create_sub(
     customer_ids: Union[List[str], pd.Series],
     predictions: Union[dict, pd.Series],
-    default_predictions: List[str] = [],
     index_to_id_dict_path: str = None,
+    default_predictions: List[str] = [],
 ) -> pd.Series:
     """
     given predictions for some customers,

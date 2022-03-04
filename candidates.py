@@ -1,7 +1,7 @@
 import pandas as pd
 
 
-def create_candidates(transactions_df, customers_df, articles_df):
+def create_candidates(transactions_df, customers_df, articles_df, **kwargs):
     """
     will return candidates in form customer_id_article_id
     will also return 'features' dict, where:
@@ -36,7 +36,8 @@ def create_candidates(transactions_df, customers_df, articles_df):
         )
         .sort_values("art_purchase_count", ascending=False)
     )
-    recent_popular_items = article_purchases_df.index[:12]
+    num_recent_items = kwargs.get("num_recent_items", 12)
+    recent_popular_items = article_purchases_df.index[:num_recent_items]
 
     popular_items_cand = list(
         [
