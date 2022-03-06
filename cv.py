@@ -1,12 +1,22 @@
-import pandas as pd
 from typing import List
+
+import pandas as pd
+import torch
+
+if torch.cuda.is_available():
+    import cudf  # type: ignore
+
+    gpu_available = True
+    pd_or_cudf = cudf
+else:
+    gpu_available = False
+    pd_or_cudf = pd
 
 
 def ground_truth(transactions_df):
-    customer_trans = transactions_df[["customer_id", "article_id"]]
-    customer_trans = customer_trans.groupby("customer_id")[["article_id"]].agg(set)
+    customer_trans = transactions_df[["customer_id", "article_id"]].drop_duplicates()
+    customer_trans = customer_trans.groupby("customer_id")[["article_id"]].agg(list)
     customer_trans.columns = ["prediction"]
-    customer_trans["prediction"] = customer_trans["prediction"].apply(list)
 
     gt = customer_trans.reset_index()
 
@@ -14,7 +24,9 @@ def ground_truth(transactions_df):
 
 
 def feature_label_split(
-    transactions_df: pd.DataFrame, label_week_number: int, feature_week_length=None
+    transactions_df: pd_or_cudf.DataFrame,
+    label_week_number: int,
+    feature_week_length=None,
 ):
     """
     split transaction_df into train/validation
@@ -39,7 +51,10 @@ def report_candidates(candidates: List[str], ground_truth_candidates: List[str])
 
     num_candidates = len(candidates)
     num_ground_truth = len(ground_truth_candidates)
-    num_true_candidates = len(set(ground_truth_candidates) & set(candidates))
+    all_candidates = pd_or_cudf.concat(
+        [ground_truth_candidates, candidates]
+    ).drop_duplicates()
+    num_true_candidates = num_candidates + num_ground_truth - len(all_candidates)
     recall = num_true_candidates / num_ground_truth
     candidates_factor = int(len(candidates) / num_true_candidates)
 
@@ -54,13 +69,16 @@ def report_candidates(candidates: List[str], ground_truth_candidates: List[str])
 
 
 def comp_average_precision(
-    data_true: pd.Series,
-    data_predicted: pd.Series,
+    data_true: pd_or_cudf.Series,
+    data_predicted: pd_or_cudf.Series,
 ) -> float:
     """
     :param data_true: items that were actually purchased by user
     :param data_predicted: items we recommended to user
     """
+    if gpu_available:
+        data_true = data_true.to_pandas().apply(list)
+        data_predicted = data_predicted.to_pandas().apply(list)
 
     # for this competition, we don't score ones without any purchases
     data_true = data_true[data_true.notna()]
@@ -71,6 +89,7 @@ def comp_average_precision(
 
     # convert to df so we can use `apply`
     eval_df = pd.DataFrame({"true": data_true})
+
     eval_df["predicted"] = data_predicted  # this way only get ones in data_true
 
     # replace na predictions with empty list

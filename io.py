@@ -1,5 +1,14 @@
 import os
+
 import pandas as pd
+import torch
+
+if torch.cuda.is_available():
+    import cudf  # type: ignore
+
+    pd_or_cudf = cudf
+else:
+    pd_or_cudf = pd
 
 dtypes = {
     # articles
@@ -33,7 +42,7 @@ dtypes = {
     "Active": "category",
     "club_member_status": "category",
     "fashion_news_frequency": "category",
-    "age": "float16",
+    "age": "float32",
     "postal_code": "category",
     # transactions
     "price": "float32",
@@ -54,6 +63,10 @@ def load_data(data_path=competition_directory, files=file_names):
     loaded_dfs = []
     for file_name in files:
         file_path = os.path.join(data_path, file_name)
-        loaded_dfs.append(pd.read_csv(file_path, dtype=dtypes))
+        df = pd_or_cudf.read_csv(file_path)
+        for column in df:
+            if column in dtypes:
+                df[column] = df[column].astype(dtypes[column])
+        loaded_dfs.append(df)
 
     return loaded_dfs

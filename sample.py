@@ -1,10 +1,19 @@
 from typing import List
 import pandas as pd
 
+import torch
+
+if torch.cuda.is_available():
+    import cudf  # type: ignore
+
+    pd_or_cudf = cudf
+else:
+    pd_or_cudf = pd
+
 
 def sample_customers(
-    customer_df: pd.DataFrame,
-    other_dfs: List[pd.DataFrame],
+    customer_df: pd_or_cudf.DataFrame,
+    other_dfs: List[pd_or_cudf.DataFrame],
     sample_size: int = None,
     sample_percent: float = 0.01,
     seed: int = 20,
@@ -31,7 +40,7 @@ def sample_customers(
         num_to_sample = int(len(customer_df) * sample_percent)
 
     sampled_customer_df = customer_df.sample(num_to_sample, random_state=seed)
-    sample_customers = set(sampled_customer_df["customer_id"])
+    sample_customers = sampled_customer_df["customer_id"]
     sampled_other_dfs = [
         other_df[other_df["customer_id"].isin(sample_customers)].copy()
         for other_df in other_dfs

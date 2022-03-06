@@ -3,6 +3,16 @@ import copy
 import pickle as pkl
 
 import pandas as pd
+import torch
+
+if torch.cuda.is_available():
+    import cudf  # type: ignore
+
+    gpu_available = True
+    pd_or_cudf = cudf
+else:
+    gpu_available = False
+    pd_or_cudf = pd
 
 
 def remove_duplicates_list(orig_list: list) -> list:
@@ -20,8 +30,8 @@ def remove_duplicates_list(orig_list: list) -> list:
 
 
 def create_sub(
-    customer_ids: Union[List[str], pd.Series],
-    predictions: Union[dict, pd.Series],
+    customer_ids: Union[List[str], pd_or_cudf.Series],
+    predictions: Union[dict, pd_or_cudf.Series],
     index_to_id_dict_path: str = None,
     default_predictions: List[str] = [],
 ) -> pd.Series:
@@ -42,6 +52,13 @@ def create_sub(
     index_to_id_dict_path: mapping to get from number index to the customer_id for submission
     """
 
+    # can't support cudf for map
+    if gpu_available:
+        if isinstance(predictions, pd_or_cudf.Series):
+            predictions = predictions.to_pandas().apply(list)
+        if isinstance(customer_ids, pd_or_cudf.Series):
+            customer_ids = customer_ids.to_pandas()
+
     # original predictions or empty list
     sub = pd.DataFrame({"customer_id": customer_ids})
     sub["prediction"] = sub["customer_id"].map(predictions)
@@ -59,35 +76,41 @@ def create_sub(
     if index_to_id_dict_path is not None:
         index_to_id_dict = pkl.load(open(index_to_id_dict_path, "rb"))
 
-    sub["customer_id"] = sub["customer_id"].map(index_to_id_dict)
+        if isinstance(index_to_id_dict, pd_or_cudf.Series):
+            index_to_id_dict = index_to_id_dict.to_pandas()
+
+        sub["customer_id"] = sub["customer_id"].map(index_to_id_dict)
 
     return sub
 
 
-def combine_subs(subs: list):
-    """
-    combine a list of subs
-    - concatenate predictions together for each customer id
-    - deduplicate
-    - take first 12
-    """
-    # this is what we'll return
-    combining_subs = subs[0].copy()
+# not sure if we'll need this, so not updating to support cudf
+# instead commenting out for deletion soon
 
-    # first predictions
-    combining_preds = combining_subs["prediction"]
-    combining_preds = combining_preds.apply(lambda x: x.split(" "))
+# def combine_subs(subs: list):
+#     """
+#     combine a list of subs
+#     - concatenate predictions together for each customer id
+#     - deduplicate
+#     - take first 12
+#     """
+#     # this is what we'll return
+#     combining_subs = subs[0].copy()
 
-    # loop/add other ones
-    for next_sub in subs[1:]:
-        next_pred = next_sub["prediction"]
-        combining_preds = combining_preds + next_pred.apply(lambda x: x.split(" "))
+#     # first predictions
+#     combining_preds = combining_subs["prediction"]
+#     combining_preds = combining_preds.apply(lambda x: x.split(" "))
 
-    # back into submission form
-    combining_preds = combining_preds.apply(remove_duplicates_list)
-    combining_preds = combining_preds.apply(lambda x: x[:12])
-    combining_preds = combining_preds.apply(lambda x: " ".join(x))
+#     # loop/add other ones
+#     for next_sub in subs[1:]:
+#         next_pred = next_sub["prediction"]
+#         combining_preds = combining_preds + next_pred.apply(lambda x: x.split(" "))
 
-    combining_subs["prediction"] = combining_preds
+#     # back into submission form
+#     combining_preds = combining_preds.apply(remove_duplicates_list)
+#     combining_preds = combining_preds.apply(lambda x: x[:12])
+#     combining_preds = combining_preds.apply(lambda x: " ".join(x))
 
-    return combining_subs
+#     combining_subs["prediction"] = combining_preds
+
+#     return combining_subs
