@@ -12,7 +12,7 @@ else:
 
 
 def create_candidates(
-    transactions_df, customers_df, articles_df, article_pairs, **kwargs
+    transactions_df, customers_df, articles_df, article_pairs_df, **kwargs
 ):
     """
     will return candidates in form customer_id_article_id
@@ -79,14 +79,22 @@ def create_candidates(
 
     del last_customer_purchase_dat
 
-    clw_pairs_df = clw_df.copy()
-    clw_pairs_df["article_id"] = clw_pairs_df["article_id"].map(article_pairs)
+    clw_pairs_df = clw_df.merge(article_pairs_df, on="article_id")
     clw_pairs_df = (
-        clw_pairs_df.groupby(["customer_id", "article_id"])["clw_count"]
+        clw_pairs_df.groupby(["customer_id", "pair_article_id"])[
+            ["clw_count", "customer_count", "percent_customers"]
+        ]
         .max()
         .reset_index()
     )
-    clw_pairs_df.columns = ["customer_id", "article_id", "clw_pair_count"]
+    clw_pairs_df.columns = [
+        "customer_id",
+        "article_id",
+        "pair_clw_count",
+        "pair_customer_count",
+        "pair_percent_customers",
+    ]
+    clw_pairs_df = clw_pairs_df.query("pair_customer_count > 2").copy()
 
     cust_last_week_cand = clw_df[["customer_id", "article_id"]].drop_duplicates()
     cust_last_week_pair_cand = clw_pairs_df[
@@ -97,7 +105,7 @@ def create_candidates(
     features["customer_last_week"] = (["customer_id", "article_id"], clw_df)
 
     clw_pairs_df = clw_pairs_df.set_index(["customer_id", "article_id"])[
-        ["clw_pair_count"]
+        ["pair_clw_count", "pair_customer_count", "pair_percent_customers"]
     ].copy()
     features["customer_last_week_pairs"] = (["customer_id", "article_id"], clw_pairs_df)
 
