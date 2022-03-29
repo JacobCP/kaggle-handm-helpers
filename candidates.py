@@ -61,11 +61,11 @@ def create_candidates(
     ###########################################################
 
     clw_df = transactions_df[["customer_id", "article_id", "t_dat"]].copy()
-    clw_df["t_dat"] = pd_or_cudf.to_datetime(clw_df["t_dat"])
+    # clw_df["t_dat"] = pd_or_cudf.to_datetime(clw_df["t_dat"])
 
     last_customer_purchase_dat = clw_df.groupby("customer_id")["t_dat"].max()
     clw_df["max_cust_dat"] = clw_df["customer_id"].map(last_customer_purchase_dat)
-    clw_df["diff_cust_dat"] = (clw_df["max_cust_dat"] - clw_df["t_dat"]).dt.days
+    clw_df["diff_cust_dat"] = clw_df["max_cust_dat"] - clw_df["t_dat"]
     clw_df = clw_df.query(f"diff_cust_dat <= {kwargs['clw_num_weeks'] * 7 - 1}").copy()
 
     clw_df = (

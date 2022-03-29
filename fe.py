@@ -2,6 +2,7 @@ import math
 import pickle as pkl
 from datetime import timedelta
 
+import numpy as np
 import pandas as pd
 import torch
 
@@ -55,6 +56,31 @@ def reduce_customer_id_memory(customers_df, other_dfs):
     return file_path
 
 
+def day_numbers(dates: pd_or_cudf.Series):
+    """
+    assign consecutive number to dates, such that earliest date is 0
+
+    args:
+    dates: pd.Series of date strings
+
+    returns:
+    all_day_numbers: pd.Series of day numbers each day in original pd.Series corresponds to
+
+    """
+
+    unique_dates = dates.unique()
+    if gpu_available:
+        unique_dates = unique_dates.to_pandas()
+    unique_dates = np.sort(unique_dates)
+    number_range = np.arange(len(unique_dates))
+    date_number_dict = dict(zip(unique_dates, number_range))
+
+    all_day_numbers = dates.map(date_number_dict)
+    all_day_numbers = all_day_numbers.astype("int16")
+
+    return all_day_numbers
+
+
 def day_week_numbers(dates: pd_or_cudf.Series):
     """
     assign week numbers to dates, such that:
@@ -62,7 +88,7 @@ def day_week_numbers(dates: pd_or_cudf.Series):
     - the latest date in the dates provided is the last day of the latest week number
 
     args:
-    dates: pd.Series of date strings of pd.datetime objects
+    dates: pd.Series of date strings
 
     returns:
     day_weeks: pd.Series of week numbers each day in original pd.Series is in
@@ -105,3 +131,15 @@ def year_week_numbers(weeks: pd_or_cudf.Series):
     year_weeks = (weeks % 52).replace(0, 52)
 
     return years, year_weeks
+
+
+def how_many_ago(sequential_numbers: pd_or_cudf.Series):
+    """
+    given a pd_or_cudf.series of numbers between 0 and n,
+    returns new series with n subtracted from each element
+
+    (so that if n reflects last day or week number, output will reflect how many days or weeks
+    earlier each element was from last day or week, with -1 meaning 1 day or week earlier etc.)
+    """
+
+    return sequential_numbers - sequential_numbers.max()
