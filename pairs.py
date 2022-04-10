@@ -1,14 +1,5 @@
 import pandas as pd
-import torch
-
-if torch.cuda.is_available():
-    import cudf  # type: ignore
-
-    gpu_available = True
-    pd_or_cudf = cudf
-else:
-    gpu_available = False
-    pd_or_cudf = pd
+import cudf
 
 
 def create_pairs(
@@ -63,6 +54,6 @@ def create_pairs(
             print(type(e), ":", e)
 
     # concatenate them all together
-    all_pairs_df = pd_or_cudf.concat(pairs_dfs).reset_index(drop=True)
+    all_pairs_df = cudf.concat(pairs_dfs).reset_index(drop=True)
 
     return all_pairs_df

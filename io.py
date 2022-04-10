@@ -1,14 +1,7 @@
 import os
 
+import cudf
 import pandas as pd
-import torch
-
-if torch.cuda.is_available():
-    import cudf  # type: ignore
-
-    pd_or_cudf = cudf
-else:
-    pd_or_cudf = pd
 
 dtypes = {
     # articles
@@ -63,7 +56,7 @@ def load_data(data_path=competition_directory, files=file_names):
     loaded_dfs = []
     for file_name in files:
         file_path = os.path.join(data_path, file_name)
-        df = pd_or_cudf.read_csv(file_path)
+        df = cudf.read_csv(file_path)
         for column in df:
             if column in dtypes:
                 df[column] = df[column].astype(dtypes[column])

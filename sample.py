@@ -1,19 +1,11 @@
 from typing import List
 import pandas as pd
-
-import torch
-
-if torch.cuda.is_available():
-    import cudf  # type: ignore
-
-    pd_or_cudf = cudf
-else:
-    pd_or_cudf = pd
+import cudf
 
 
 def sample_customers(
-    customer_df: pd_or_cudf.DataFrame,
-    other_dfs: List[pd_or_cudf.DataFrame],
+    customer_df: cudf.DataFrame,
+    other_dfs: List[cudf.DataFrame],
     sample_size: int = None,
     sample_percent: float = 0.01,
     seed: int = 20,

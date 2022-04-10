@@ -4,25 +4,7 @@ from datetime import timedelta
 
 import numpy as np
 import pandas as pd
-import torch
-
-
-if torch.cuda.is_available():
-    import cudf  # type: ignore
-
-    gpu_available = True
-    apply_method_str = "applymap"
-    pd_or_cudf = cudf
-else:
-    gpu_available = False
-    apply_method_str = "apply"
-    pd_or_cudf = pd
-
-
-def my_apply(series, func_to_apply):
-    apply_method = getattr(series, apply_method_str)
-
-    return apply_method(func_to_apply)
+import cudf
 
 
 def reduce_customer_id_memory(customers_df, other_dfs):
@@ -56,7 +38,7 @@ def reduce_customer_id_memory(customers_df, other_dfs):
     return file_path
 
 
-def day_numbers(dates: pd_or_cudf.Series):
+def day_numbers(dates: cudf.Series):
     """
     assign consecutive number to dates, such that earliest date is 0
 
@@ -69,8 +51,7 @@ def day_numbers(dates: pd_or_cudf.Series):
     """
 
     unique_dates = dates.unique()
-    if gpu_available:
-        unique_dates = unique_dates.to_pandas()
+    unique_dates = unique_dates.to_pandas()
     unique_dates = np.sort(unique_dates)
     number_range = np.arange(len(unique_dates))
     date_number_dict = dict(zip(unique_dates, number_range))
@@ -81,7 +62,7 @@ def day_numbers(dates: pd_or_cudf.Series):
     return all_day_numbers
 
 
-def day_week_numbers(dates: pd_or_cudf.Series):
+def day_week_numbers(dates: cudf.Series):
     """
     assign week numbers to dates, such that:
     - week numbers represent consecutive actual weeks on the calendar
@@ -94,15 +75,15 @@ def day_week_numbers(dates: pd_or_cudf.Series):
     day_weeks: pd.Series of week numbers each day in original pd.Series is in
 
     """
-    pd_dates = pd_or_cudf.to_datetime(dates)
+    pd_dates = cudf.to_datetime(dates)
 
-    unique_dates = pd_or_cudf.Series(pd_dates.unique())
+    unique_dates = cudf.Series(pd_dates.unique())
     numbered_days = unique_dates - unique_dates.min() + timedelta(1)
     numbered_days = numbered_days.dt.days
     extra_days = numbered_days.max() % 7
     numbered_days -= extra_days
-    day_weeks = my_apply(numbered_days / 7, lambda x: math.ceil(x))
-    day_weeks_map = pd_or_cudf.DataFrame(
+    day_weeks = (numbered_days / 7).applymap(lambda x: math.ceil(x))
+    day_weeks_map = cudf.DataFrame(
         {"day_weeks": day_weeks, "unique_dates": unique_dates}
     ).set_index("unique_dates")["day_weeks"]
     all_day_weeks = pd_dates.map(day_weeks_map)
@@ -111,7 +92,7 @@ def day_week_numbers(dates: pd_or_cudf.Series):
     return all_day_weeks
 
 
-def year_week_numbers(weeks: pd_or_cudf.Series):
+def year_week_numbers(weeks: cudf.Series):
     """
     convert consecutive week numbers into year and week features, such that:
     - each year has 52 weeks
@@ -133,7 +114,7 @@ def year_week_numbers(weeks: pd_or_cudf.Series):
     return years, year_weeks
 
 
-def how_many_ago(sequential_numbers: pd_or_cudf.Series):
+def how_many_ago(sequential_numbers: cudf.Series):
     """
     given a pd_or_cudf.series of numbers between 0 and n,
     returns new series with n subtracted from each element

@@ -1,16 +1,7 @@
 from typing import List
 
 import pandas as pd
-import torch
-
-if torch.cuda.is_available():
-    import cudf  # type: ignore
-
-    gpu_available = True
-    pd_or_cudf = cudf
-else:
-    gpu_available = False
-    pd_or_cudf = pd
+import cudf
 
 
 def ground_truth(transactions_df):
@@ -24,7 +15,7 @@ def ground_truth(transactions_df):
 
 
 def feature_label_split(
-    transactions_df: pd_or_cudf.DataFrame,
+    transactions_df: cudf.DataFrame,
     label_week_number: int,
     feature_week_length=None,
 ):
@@ -51,7 +42,7 @@ def report_candidates(candidates: List[str], ground_truth_candidates: List[str])
 
     num_candidates = len(candidates)
     num_ground_truth = len(ground_truth_candidates)
-    all_candidates = pd_or_cudf.concat(
+    all_candidates = cudf.concat(
         [ground_truth_candidates, candidates]
     ).drop_duplicates()
     num_true_candidates = num_candidates + num_ground_truth - len(all_candidates)
@@ -69,16 +60,15 @@ def report_candidates(candidates: List[str], ground_truth_candidates: List[str])
 
 
 def comp_average_precision(
-    data_true: pd_or_cudf.Series,
-    data_predicted: pd_or_cudf.Series,
+    data_true: cudf.Series,
+    data_predicted: cudf.Series,
 ) -> float:
     """
     :param data_true: items that were actually purchased by user
     :param data_predicted: items we recommended to user
     """
-    if gpu_available:
-        data_true = data_true.to_pandas().apply(list)
-        data_predicted = data_predicted.to_pandas().apply(list)
+    data_true = data_true.to_pandas().apply(list)
+    data_predicted = data_predicted.to_pandas().apply(list)
 
     # for this competition, we don't score ones without any purchases
     data_true = data_true[data_true.notna()]

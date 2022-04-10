@@ -1,14 +1,5 @@
-from numpy import isin
+import cudf
 import pandas as pd
-
-import torch
-
-if torch.cuda.is_available():
-    import cudf  # type: ignore
-
-    pd_or_cudf = cudf
-else:
-    pd_or_cudf = pd
 
 
 def create_candidates(
@@ -135,11 +126,11 @@ def create_candidates(
 
     num_recent_items = kwargs.get("num_recent_items", 12)
     recent_popular_items = article_purchases_df.index[:num_recent_items]
-    popular_items_df = pd_or_cudf.DataFrame(
-        {"article_id": pd_or_cudf.Series(recent_popular_items), "join_col": 1}
+    popular_items_df = cudf.DataFrame(
+        {"article_id": cudf.Series(recent_popular_items), "join_col": 1}
     )
 
-    popular_items_cand = pd_or_cudf.DataFrame(
+    popular_items_cand = cudf.DataFrame(
         {"customer_id": customers_df["customer_id"], "join_col": 1}
     )
     popular_items_cand = popular_items_cand.merge(popular_items_df, on="join_col")
@@ -148,7 +139,7 @@ def create_candidates(
     features["popular_articles"] = (["article_id"], article_purchases_df)
 
     candidates = (
-        pd_or_cudf.concat(
+        cudf.concat(
             [
                 customer_article_cand,
                 cust_last_week_cand,

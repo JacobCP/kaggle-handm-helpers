@@ -3,16 +3,7 @@ import copy
 import pickle as pkl
 
 import pandas as pd
-import torch
-
-if torch.cuda.is_available():
-    import cudf  # type: ignore
-
-    gpu_available = True
-    pd_or_cudf = cudf
-else:
-    gpu_available = False
-    pd_or_cudf = pd
+import cudf
 
 
 def remove_duplicates_list(orig_list: list) -> list:
@@ -30,8 +21,8 @@ def remove_duplicates_list(orig_list: list) -> list:
 
 
 def create_sub(
-    customer_ids: Union[List[str], pd_or_cudf.Series],
-    predictions: Union[dict, pd_or_cudf.Series],
+    customer_ids: Union[List[str], cudf.Series],
+    predictions: Union[dict, cudf.Series],
     index_to_id_dict_path: str = None,
     default_predictions: List[str] = [],
 ) -> pd.Series:
@@ -53,11 +44,8 @@ def create_sub(
     """
 
     # can't support cudf for map
-    if gpu_available:
-        if isinstance(predictions, pd_or_cudf.Series):
-            predictions = predictions.to_pandas().apply(list)
-        if isinstance(customer_ids, pd_or_cudf.Series):
-            customer_ids = customer_ids.to_pandas()
+    predictions = predictions.to_pandas().apply(list)
+    customer_ids = customer_ids.to_pandas()
 
     # original predictions or empty list
     sub = pd.DataFrame({"customer_id": customer_ids})
@@ -76,8 +64,7 @@ def create_sub(
     if index_to_id_dict_path is not None:
         index_to_id_dict = pkl.load(open(index_to_id_dict_path, "rb"))
 
-        if isinstance(index_to_id_dict, pd_or_cudf.Series):
-            index_to_id_dict = index_to_id_dict.to_pandas()
+        index_to_id_dict = index_to_id_dict.to_pandas()
 
         sub["customer_id"] = sub["customer_id"].map(index_to_id_dict)
 
