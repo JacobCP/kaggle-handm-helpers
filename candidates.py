@@ -94,32 +94,30 @@ def create_last_customer_weeks_and_pairs(transactions_df, article_pairs_df, num_
 
 
 def create_popular_article_cand(
-    transactions_df, customers_df, num_weeks, num_articles=12
+    transactions_df,
+    customers_df,
+    articles_df,
+    num_weeks,
+    hier_col,
+    num_candidates,
+    num_articles=12,
 ):
+    ###########################################
+    # first get general popular candidates
+    ###########################################
     last_week_number = transactions_df["week_number"].max()
 
+    # baseline
     article_purchases_df = (
         transactions_df.query(f"week_number >= {last_week_number - num_weeks + 1}")
-        .groupby("article_id")
-        .agg(
-            {
-                "week_number": "max",
-                "t_dat": "count",
-            }
-        )
-        .rename(
-            columns={
-                "week_number": "pa_last_purchase_week",
-                "t_dat": "pa_purchase_count",
-            }
-        )
-        .sort_values("pa_purchase_count", ascending=False)
+        .groupby("article_id")["customer_id"]
+        .count()
+        .sort_values(ascending=False)
     )
-
-    recent_popular_articles = article_purchases_df.index[:num_articles]
-    popular_articles_df = cudf.DataFrame(
-        {"article_id": cudf.Series(recent_popular_articles), "join_col": 1}
-    )
+    article_purchases_df = article_purchases_df.reset_index()
+    article_purchases_df.columns = ["article_id", "counts"]
+    popular_articles_df = article_purchases_df[:num_candidates].copy()
+    popular_articles_df["join_col"] = 1
 
     popular_articles_cand = cudf.DataFrame(
         {"customer_id": customers_df["customer_id"], "join_col": 1}
@@ -129,9 +127,71 @@ def create_popular_article_cand(
     )
     del popular_articles_cand["join_col"]
 
-    features = (["article_id"], article_purchases_df)
+    ###################################################
+    # now let's limit it by cust/hierarchy information
+    ###################################################
+    sample_col = "t_dat"
 
-    return popular_articles_cand, features
+    # add hierarchy column to transactions
+    transactions_df[hier_col] = transactions_df["article_id"].map(
+        articles_df.set_index("article_id")[hier_col]
+    )
+    # get customer/hierarchy statistics
+    cust_hier = (
+        transactions_df.groupby(["customer_id", hier_col])[sample_col]
+        .count()
+        .reset_index()
+    )
+    cust_hier.columns = list(cust_hier.columns)[:-1] + ["cust_hier_counts"]
+    cust_hier = cust_hier.sort_values(
+        ["customer_id", "cust_hier_counts"], ascending=False
+    )
+    cust_hier["total_counts"] = cust_hier["customer_id"].map(
+        transactions_df.groupby("customer_id")[sample_col].count()
+    )
+    cust_hier["cust_hier_portion"] = (
+        cust_hier["cust_hier_counts"] / cust_hier["total_counts"]
+    )
+    cust_hier = cust_hier[["customer_id", hier_col, "cust_hier_portion"]].copy()
+
+    popular_articles_cand[hier_col] = popular_articles_cand["article_id"].map(
+        a.set_index("article_id")[hier_col]
+    )
+    popular_articles_cand = popular_articles_cand.merge(
+        cust_hier, on=["customer_id", hier_col], how="left"
+    )
+    popular_articles_cand["cust_hier_portion"] = popular_articles_cand[
+        "cust_hier_portion"
+    ].fillna(-1)
+
+    del popular_articles_cand[hier_col]
+
+    popular_articles_cand = popular_articles_cand.sort_values(
+        ["customer_id", "cust_hier_portion", "counts"], ascending=False
+    )
+    popular_articles_cand = popular_articles_cand[["customer_id", "article_id"]].copy()
+    popular_articles_cand = h_cudf.cudf_groupby_head(
+        popular_articles_cand, "customer_id", 12
+    )
+    popular_articles_cand = popular_articles_cand.sort_values(
+        ["customer_id", "article_id"]
+    )
+    popular_articles_cand = popular_articles_cand.reset_index(drop=True)
+
+    cust_hier_features = cust_hier.set_index(["customer_id", hier_col])
+    cust_hier_features = cust_hier_features.reset_index().set_index(
+        ["customer_id", hier_col]
+    )
+    cust_hier_features = (["customer_id", hier_col], cust_hier_features)
+
+    article_purchases_df = article_purchases_df[["article_id", "counts"]]
+    article_purchases_df.columns = ["article_id", "recent_popularity_counts"]
+    article_purchase_features = (
+        ["article_id"],
+        article_purchases_df.set_index("article_id"),
+    )
+
+    return popular_articles_cand, cust_hier_features, article_purchase_features
 
 
 def add_features_to_candidates(candidates_df, features, customers_df, articles_df):
