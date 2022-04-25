@@ -2,24 +2,10 @@ import cudf
 import pandas as pd
 
 
-def create_candidates(
-    transactions_df, customers_df, articles_df, article_pairs_df, **kwargs
-):
-    """
-    will return candidates in form customer_id_article_id
-    will also return 'features' dict, where:
-        - format is {<column_name>:<features_df},
-        - column_name is a column, or tuple of columns, in articles, customers or transactions
-        - features_df.index values correspond to values of column_name column
-        - columns of features_df are engineered features unique to the df.index values
-    """
-    features = {}
+def create_recent_customer_candidates(transactions_df, recent_customer_weeks):
     last_week_number = transactions_df["week_number"].max()
 
-    #######################################################
-    # past x weeks customer purchases (counts from always)
-    #####################################################
-    customer_article_df = (
+    recent_customer_df = (
         transactions_df.groupby(["customer_id", "article_id"])
         .agg(
             {
@@ -38,27 +24,28 @@ def create_candidates(
         .sort_values("ca_purchase_count", ascending=False)
     )
 
-    features["customer_article"] = (["customer_id", "article_id"], customer_article_df)
-    customer_article_cand = (
-        customer_article_df.query(
-            f"ca_last_purchase_week >= {last_week_number - kwargs['ca_num_weeks'] + 1}"
+    features = (["customer_id", "article_id"], recent_customer_df)
+    recent_customer_cand = (
+        recent_customer_df.query(
+            f"ca_last_purchase_week >= {last_week_number - recent_customer_weeks + 1}"
         )
         .reset_index()[["customer_id", "article_id"]]
         .drop_duplicates()
     )
 
-    ###########################################################
-    # customer_last_weeks purchases (and their pairs)
-    ###########################################################
+    return recent_customer_cand, features
 
+
+def create_last_customer_weeks_and_pairs(transactions_df, article_pairs_df, num_weeks):
     clw_df = transactions_df[["customer_id", "article_id", "t_dat"]].copy()
-    # clw_df["t_dat"] = pd_or_cudf.to_datetime(clw_df["t_dat"])
 
+    # only transactions in "x" weeks before last customer purchase
     last_customer_purchase_dat = clw_df.groupby("customer_id")["t_dat"].max()
     clw_df["max_cust_dat"] = clw_df["customer_id"].map(last_customer_purchase_dat)
     clw_df["diff_cust_dat"] = clw_df["max_cust_dat"] - clw_df["t_dat"]
-    clw_df = clw_df.query(f"diff_cust_dat <= {kwargs['clw_num_weeks'] * 7 - 1}").copy()
+    clw_df = clw_df.query(f"diff_cust_dat <= {num_weeks * 7 - 1}").copy()
 
+    # count purchased during that period
     clw_df = (
         clw_df.groupby(["customer_id", "article_id"])["t_dat"].count().reset_index()
     )
@@ -70,6 +57,9 @@ def create_candidates(
 
     del last_customer_purchase_dat
 
+    # merge with pairs, and get max of:
+    #  - sources' last week(s) purchase count
+    #  - count and percent of customer pairs (see generating code for details)
     clw_pairs_df = clw_df.merge(article_pairs_df, on="article_id")
     clw_pairs_df = (
         clw_pairs_df.groupby(["customer_id", "pair_article_id"])[
@@ -93,21 +83,23 @@ def create_candidates(
     ].drop_duplicates()
 
     clw_df = clw_df.set_index(["customer_id", "article_id"])[["clw_count"]].copy()
-    features["customer_last_week"] = (["customer_id", "article_id"], clw_df)
+    features = (["customer_id", "article_id"], clw_df)
 
     clw_pairs_df = clw_pairs_df.set_index(["customer_id", "article_id"])[
         ["pair_clw_count", "pair_customer_count", "pair_percent_customers"]
     ].copy()
-    features["customer_last_week_pairs"] = (["customer_id", "article_id"], clw_pairs_df)
+    pair_features = (["customer_id", "article_id"], clw_pairs_df)
 
-    #############################
-    # recently popular items
-    #############################
+    return cust_last_week_cand, cust_last_week_pair_cand, features, pair_features
+
+
+def create_popular_article_cand(
+    transactions_df, customers_df, num_weeks, num_articles=12
+):
+    last_week_number = transactions_df["week_number"].max()
 
     article_purchases_df = (
-        transactions_df.query(
-            f"week_number >= {last_week_number - kwargs['pa_num_weeks'] + 1}"
-        )
+        transactions_df.query(f"week_number >= {last_week_number - num_weeks + 1}")
         .groupby("article_id")
         .agg(
             {
@@ -124,34 +116,22 @@ def create_candidates(
         .sort_values("pa_purchase_count", ascending=False)
     )
 
-    num_recent_items = kwargs.get("num_recent_items", 12)
-    recent_popular_items = article_purchases_df.index[:num_recent_items]
-    popular_items_df = cudf.DataFrame(
-        {"article_id": cudf.Series(recent_popular_items), "join_col": 1}
+    recent_popular_articles = article_purchases_df.index[:num_articles]
+    popular_articles_df = cudf.DataFrame(
+        {"article_id": cudf.Series(recent_popular_articles), "join_col": 1}
     )
 
-    popular_items_cand = cudf.DataFrame(
+    popular_articles_cand = cudf.DataFrame(
         {"customer_id": customers_df["customer_id"], "join_col": 1}
     )
-    popular_items_cand = popular_items_cand.merge(popular_items_df, on="join_col")
-    del popular_items_cand["join_col"]
-
-    features["popular_articles"] = (["article_id"], article_purchases_df)
-
-    candidates = (
-        cudf.concat(
-            [
-                customer_article_cand,
-                cust_last_week_cand,
-                cust_last_week_pair_cand,
-                popular_items_cand,
-            ]
-        )
-        .drop_duplicates()
-        .reset_index(drop=True)
+    popular_articles_cand = popular_articles_cand.merge(
+        popular_articles_df, on="join_col"
     )
+    del popular_articles_cand["join_col"]
 
-    return candidates, features
+    features = (["article_id"], article_purchases_df)
+
+    return popular_articles_cand, features
 
 
 def add_features_to_candidates(candidates_df, features, customers_df, articles_df):
