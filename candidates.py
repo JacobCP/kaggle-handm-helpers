@@ -182,7 +182,9 @@ def create_popular_article_cand(
         ["customer_id", "cust_hier_portion", "counts"], ascending=False
     )
     popular_articles_cand = popular_articles_cand[["customer_id", "article_id"]].copy()
-    popular_articles_cand = cudf_groupby_head(popular_articles_cand, "customer_id", 12)
+    popular_articles_cand = cudf_groupby_head(
+        popular_articles_cand, "customer_id", num_articles
+    )
     popular_articles_cand = popular_articles_cand.sort_values(
         ["customer_id", "article_id"]
     )
