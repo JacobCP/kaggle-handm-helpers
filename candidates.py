@@ -2,6 +2,16 @@ import cudf
 import pandas as pd
 
 
+def cudf_groupby_head(df, groupby, head_count):
+    df = df.to_pandas()
+
+    head_df = df.groupby(groupby).head(head_count)
+
+    head_df = cudf.DataFrame(head_df)
+
+    return head_df
+
+
 def create_recent_customer_candidates(transactions_df, recent_customer_weeks):
     last_week_number = transactions_df["week_number"].max()
 
@@ -154,8 +164,9 @@ def create_popular_article_cand(
     )
     cust_hier = cust_hier[["customer_id", hier_col, "cust_hier_portion"]].copy()
 
+    # add customer/hierarchy statistics to candidates
     popular_articles_cand[hier_col] = popular_articles_cand["article_id"].map(
-        a.set_index("article_id")[hier_col]
+        articles_df.set_index("article_id")[hier_col]
     )
     popular_articles_cand = popular_articles_cand.merge(
         cust_hier, on=["customer_id", hier_col], how="left"
@@ -166,24 +177,25 @@ def create_popular_article_cand(
 
     del popular_articles_cand[hier_col]
 
+    # take top based on customer/hierarchy statistics
     popular_articles_cand = popular_articles_cand.sort_values(
         ["customer_id", "cust_hier_portion", "counts"], ascending=False
     )
     popular_articles_cand = popular_articles_cand[["customer_id", "article_id"]].copy()
-    popular_articles_cand = h_cudf.cudf_groupby_head(
-        popular_articles_cand, "customer_id", 12
-    )
+    popular_articles_cand = cudf_groupby_head(popular_articles_cand, "customer_id", 12)
     popular_articles_cand = popular_articles_cand.sort_values(
         ["customer_id", "article_id"]
     )
     popular_articles_cand = popular_articles_cand.reset_index(drop=True)
 
+    # save the customer/hierarchy statistics in the features
     cust_hier_features = cust_hier.set_index(["customer_id", hier_col])
     cust_hier_features = cust_hier_features.reset_index().set_index(
         ["customer_id", hier_col]
     )
     cust_hier_features = (["customer_id", hier_col], cust_hier_features)
 
+    # and save the article purchase statistics
     article_purchases_df = article_purchases_df[["article_id", "counts"]]
     article_purchases_df.columns = ["article_id", "recent_popularity_counts"]
     article_purchase_features = (
