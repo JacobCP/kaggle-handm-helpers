@@ -124,3 +124,42 @@ def how_many_ago(sequential_numbers: cudf.Series):
     """
 
     return sequential_numbers - sequential_numbers.max()
+
+
+def create_cust_hier_features(transactions_df, articles_df, hier_cols, features_db):
+    sample_col = "t_dat"
+
+    # create hiers
+    for hier_col in hier_cols:
+        # total customer counts
+        total_cust_counts = transactions_df.groupby("customer_id")[sample_col].count()
+
+        # add hierarchy column to transactions
+        article_hier_lookup = articles_df.set_index("article_id")[hier_col]
+        transactions_df[hier_col] = transactions_df["article_id"].map(
+            article_hier_lookup
+        )
+
+        # get customer/hierarchy statistics
+        cust_hier = (
+            transactions_df.groupby(["customer_id", hier_col])[sample_col]
+            .count()
+            .reset_index()
+        )
+        cust_hier.columns = list(cust_hier.columns)[:-1] + ["cust_hier_counts"]
+        cust_hier = cust_hier.sort_values(
+            ["customer_id", "cust_hier_counts"], ascending=False
+        )
+
+        cust_hier["total_counts"] = cust_hier["customer_id"].map(total_cust_counts)
+
+        hier_portion_column = f"cust_{hier_col}_portion"
+        cust_hier[hier_portion_column] = (
+            cust_hier["cust_hier_counts"] / cust_hier["total_counts"]
+        )
+        cust_hier = cust_hier[["customer_id", hier_col, hier_portion_column]]
+        cust_hier = cust_hier.set_index(["customer_id", hier_col])
+        cust_hier[hier_portion_column] = cust_hier[hier_portion_column].astype(
+            "float32"
+        )
+        features_db[hier_portion_column] = (["customer_id", hier_col], cust_hier)

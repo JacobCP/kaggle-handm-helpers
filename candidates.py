@@ -215,6 +215,7 @@ def add_features_to_candidates(candidates_df, features, customers_df, articles_d
         col_names, feature_df = features[features_key]
 
         # add the key to our df so we can merge the features in
+        to_delete = []
         for col_name in col_names:
             if col_name not in candidates_df:
                 if col_name in customers_df:
@@ -222,14 +223,19 @@ def add_features_to_candidates(candidates_df, features, customers_df, articles_d
                     candidates_df[col_name] = candidates_df["customer_id"].map(
                         col_name_dict
                     )
+                    to_delete.append(col_name)
                 elif col_name in articles_df:
                     col_name_dict = articles_df.set_index("article_id")[col_name]
                     candidates_df[col_name] = candidates_df["article_id"].map(
                         col_name_dict
                     )
+                    to_delete.append(col_name)
 
         # now we can add the features
         candidates_df = candidates_df.merge(feature_df, how="left", on=col_names)
+
+        for col_name in to_delete:
+            del candidates_df[col_name]
 
     return candidates_df
 
