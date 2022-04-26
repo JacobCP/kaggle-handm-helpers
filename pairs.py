@@ -2,58 +2,93 @@ import pandas as pd
 import cudf
 
 
-def create_pairs(
-    df,
-    last_week_number,
-    pairs_per_item,
-):
-    # get only the columns we need
-    df = df[["customer_id", "article_id", "week_number"]].copy()
+def cudf_groupby_head(df, groupby, head_count):
+    df = df.to_pandas()
 
-    # drop everything after
-    df = df.query(f"week_number <= {last_week_number}").copy()
+    head_df = df.groupby(groupby).head(head_count)
 
-    # we'll look for pairs in last week
-    last_week_df = df.query(f"week_number=={last_week_number}").copy()
+    head_df = cudf.DataFrame(head_df)
 
-    # no longer need week number
-    del df["week_number"], last_week_df["week_number"]
+    return head_df
 
-    # drop articles with only one customer
-    article_customer_counts = df.groupby("article_id")["customer_id"].nunique()
-    single_customer_articles = article_customer_counts[
-        article_customer_counts == 1
-    ].index
-    df = df[~(df["article_id"].isin(single_customer_articles))].copy()
 
-    # drop duplicates
-    df, lw_df = df.drop_duplicates(), last_week_df.drop_duplicates()
+def create_pairs(transactions_df, week_number, pairs_per_item):
+    # get the dfs
+    working_t_df = transactions_df[["customer_id", "article_id", "week_number"]].copy()
 
-    # FIND ITEMS PURCHASED TOGETHER
-    vc = df.article_id.value_counts()
-    pairs_dfs = []
-    for j, i in enumerate(vc.index.values):
-        if j % 50 == 0:
-            print(j, ", ", end="")
+    # we'll look for pairs in last week only
+    working_t_df = working_t_df.query(f"week_number <= {week_number}").copy()
+    pairs_t_df = working_t_df.query(f"week_number == {week_number}").copy()
+    pairs_t_df.columns = ["customer_id", "pair_article_id", "week_number"]
 
-        USERS = df.loc[df.article_id == i.item(), "customer_id"].unique()
-        row_filter = (lw_df.customer_id.isin(USERS)) & (lw_df.article_id != i.item())
-        pairs_df = lw_df.loc[row_filter, "article_id"]
+    # drop week number, and drop duplicates
+    del working_t_df["week_number"], pairs_t_df["week_number"]
+    working_t_df = working_t_df.drop_duplicates()
+    pairs_t_df = pairs_t_df.drop_duplicates()
 
-        if len(pairs_df) == 0:
-            continue
+    # setup the loop
+    unique_articles = working_t_df["article_id"].unique()
+    batch_size = 5000
+    batch_pairs_dfs = []
 
-        try:
-            pairs_df = pairs_df.value_counts().reset_index()[:pairs_per_item]
-            pairs_df.columns = ["pair_article_id", "customer_count"]
-            pairs_df["percent_customers"] = pairs_df["customer_count"] / len(USERS)
-            pairs_df["article_id"] = i.item()
+    # start the loop
+    for i in range(0, len(unique_articles), batch_size):
+        print(f"processing article #{i:,} to #{i+batch_size:,}")
 
-            pairs_dfs.append(pairs_df)
-        except Exception as e:
-            print(type(e), ":", e)
+        # take batch of articles/transactions
+        batch_articles = unique_articles[i : i + batch_size]
+        batch_t = working_t_df[working_t_df["article_id"].isin(batch_articles)]
 
-    # concatenate them all together
-    all_pairs_df = cudf.concat(pairs_dfs).reset_index(drop=True)
+        # get total # of customers who bought each article (for later statistics)
+        all_cust_counts = batch_t.groupby("article_id")["customer_id"].nunique()
+        all_cust_counts = all_cust_counts.reset_index()
+        all_cust_counts.columns = ["article_id", "all_customer_counts"]
+        all_cust_counts["all_customer_counts"] -= 1  # not him himself
 
-    return all_pairs_df
+        # get all pairs for those articles (other articles those customers bought)
+        batch_pairs_df = batch_t.merge(pairs_t_df, on="customer_id")
+
+        # delete same-article pairs
+        same_article_row_idxs = batch_pairs_df.query(
+            "article_id==pair_article_id"
+        ).index
+        batch_pairs_df = batch_pairs_df.drop(same_article_row_idxs)
+
+        # delete single customer articles
+        c1s = (
+            batch_pairs_df.groupby("article_id")[["customer_id"]]
+            .nunique()
+            .query("customer_id==1")
+            .index
+        )
+        single_customer_row_idxs = batch_pairs_df[
+            batch_pairs_df["article_id"].isin(c1s)
+        ].index
+        batch_pairs_df = batch_pairs_df.drop(single_customer_row_idxs)
+
+        # get sorted counts of article-pair occurences
+        batch_pairs_df = batch_pairs_df.groupby(["article_id", "pair_article_id"])[
+            ["customer_id"]
+        ].count()
+        batch_pairs_df.columns = ["customer_count"]
+        batch_pairs_df = batch_pairs_df.reset_index()
+        batch_pairs_df = batch_pairs_df.sort_values(
+            ["article_id", "customer_count"], ascending=False
+        )
+
+        # get top x pairs for each article
+        batch_pairs_df = cudf_groupby_head(batch_pairs_df, "article_id", pairs_per_item)
+
+        # calculate percentage statistic
+        batch_pairs_df = batch_pairs_df.merge(all_cust_counts, on="article_id")
+        batch_pairs_df["percent_customers"] = (
+            batch_pairs_df["customer_count"] / batch_pairs_df["all_customer_counts"]
+        )
+        del batch_pairs_df["all_customer_counts"]
+
+        batch_pairs_dfs.append(batch_pairs_df)
+
+    all_article_pairs_df = cudf.concat(batch_pairs_dfs)
+    print(len(all_article_pairs_df))
+
+    return all_article_pairs_df
