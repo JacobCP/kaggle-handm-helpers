@@ -12,7 +12,14 @@ def cudf_groupby_head(df, groupby, head_count):
     return head_df
 
 
-def create_recent_customer_candidates(transactions_df, recent_customer_weeks):
+def create_recent_customer_candidates(
+    transactions_df, recent_customer_weeks, customers=None
+):
+    if customers is not None:
+        transactions_df = transactions_df[
+            transactions_df["customer_id"].isin(customers)
+        ]
+
     last_week_number = transactions_df["week_number"].max()
 
     recent_customer_df = (
@@ -46,8 +53,12 @@ def create_recent_customer_candidates(transactions_df, recent_customer_weeks):
     return recent_customer_cand, features
 
 
-def create_last_customer_weeks_and_pairs(transactions_df, article_pairs_df, num_weeks):
+def create_last_customer_weeks_and_pairs(
+    transactions_df, article_pairs_df, num_weeks, customers=None
+):
     clw_df = transactions_df[["customer_id", "article_id", "t_dat"]].copy()
+    if customers is not None:
+        clw_df = clw_df[clw_df["customer_id"].isin(customers)]
 
     # only transactions in "x" weeks before last customer purchase
     last_customer_purchase_dat = clw_df.groupby("customer_id")["t_dat"].max()
@@ -111,6 +122,7 @@ def create_popular_article_cand(
     hier_col,
     num_candidates,
     num_articles=12,
+    customers=None,
 ):
     ###########################################
     # first get general popular candidates
@@ -128,6 +140,13 @@ def create_popular_article_cand(
     article_purchases_df.columns = ["article_id", "counts"]
     popular_articles_df = article_purchases_df[:num_candidates].copy()
     popular_articles_df["join_col"] = 1
+
+    # from here on, only care about relevant customers
+    if customers is not None:
+        transactions_df = transactions_df[
+            transactions_df["customer_id"].isin(customers)
+        ]
+        customers_df = customers_df[customers_df["customer_id"].isin(customers)]
 
     popular_articles_cand = cudf.DataFrame(
         {"customer_id": customers_df["customer_id"], "join_col": 1}
