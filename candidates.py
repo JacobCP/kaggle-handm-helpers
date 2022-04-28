@@ -54,7 +54,7 @@ def create_recent_customer_candidates(
 
 
 def create_last_customer_weeks_and_pairs(
-    transactions_df, article_pairs_df, num_weeks, customers=None
+    transactions_df, article_pairs_df, num_weeks, num_pair_weeks, customers
 ):
     clw_df = transactions_df[["customer_id", "article_id", "t_dat"]].copy()
     if customers is not None:
@@ -64,6 +64,7 @@ def create_last_customer_weeks_and_pairs(
     last_customer_purchase_dat = clw_df.groupby("customer_id")["t_dat"].max()
     clw_df["max_cust_dat"] = clw_df["customer_id"].map(last_customer_purchase_dat)
     clw_df["diff_cust_dat"] = clw_df["max_cust_dat"] - clw_df["t_dat"]
+    clw_pairs_df = clw_df.query(f"diff_cust_dat <= {num_pair_weeks * 7 - 1}").copy()
     clw_df = clw_df.query(f"diff_cust_dat <= {num_weeks * 7 - 1}").copy()
 
     # count purchased during that period
@@ -76,12 +77,23 @@ def create_last_customer_weeks_and_pairs(
         "clw_count",
     ]
 
+    clw_pairs_df = (
+        clw_pairs_df.groupby(["customer_id", "article_id"])["t_dat"]
+        .count()
+        .reset_index()
+    )
+    clw_pairs_df.columns = [
+        "customer_id",
+        "article_id",
+        "clw_count",
+    ]
+
     del last_customer_purchase_dat
 
     # merge with pairs, and get max of:
     #  - sources' last week(s) purchase count
     #  - count and percent of customer pairs (see generating code for details)
-    clw_pairs_df = clw_df.merge(article_pairs_df, on="article_id")
+    clw_pairs_df = clw_pairs_df.merge(article_pairs_df, on="article_id")
     clw_pairs_df = (
         clw_pairs_df.groupby(["customer_id", "pair_article_id"])[
             ["clw_count", "customer_count", "percent_customers"]
