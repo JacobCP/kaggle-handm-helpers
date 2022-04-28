@@ -47,16 +47,16 @@ def report_candidates(candidates: List[str], ground_truth_candidates: List[str])
     ).drop_duplicates()
     num_true_candidates = num_candidates + num_ground_truth - len(all_candidates)
     recall = num_true_candidates / num_ground_truth
-    candidates_factor = int(len(candidates) / num_true_candidates)
+    precision = num_true_candidates / num_candidates
 
-    print(
-        f"candidates factor: {candidates_factor:,} ({num_candidates:,}/{num_ground_truth:,})"
-    )
     print(
         f"candidates recall: {recall:.2%} ({num_true_candidates:,}/{num_ground_truth:,})"
     )
+    print(
+        f"candidates precision: {precision:.2%} ({num_true_candidates:,}/{num_candidates:,})"
+    )
 
-    return recall, candidates_factor
+    return recall, precision
 
 
 def comp_average_precision(
