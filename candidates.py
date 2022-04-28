@@ -221,13 +221,6 @@ def create_popular_article_cand(
     )
     popular_articles_cand = popular_articles_cand.reset_index(drop=True)
 
-    # save the customer/hierarchy statistics in the features
-    cust_hier_features = cust_hier.set_index(["customer_id", hier_col])
-    cust_hier_features = cust_hier_features.reset_index().set_index(
-        ["customer_id", hier_col]
-    )
-    cust_hier_features = (["customer_id", hier_col], cust_hier_features)
-
     # and save the article purchase statistics
     article_purchases_df = article_purchases_df[["article_id", "counts"]]
     article_purchases_df.columns = ["article_id", "recent_popularity_counts"]
@@ -236,7 +229,7 @@ def create_popular_article_cand(
         article_purchases_df.set_index("article_id"),
     )
 
-    return popular_articles_cand, cust_hier_features, article_purchase_features
+    return popular_articles_cand, article_purchase_features
 
 
 def add_features_to_candidates(candidates_df, features, customers_df, articles_df):
