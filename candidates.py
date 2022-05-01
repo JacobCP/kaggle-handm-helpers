@@ -63,30 +63,34 @@ def create_last_customer_weeks_and_pairs(
     # only transactions in "x" weeks before last customer purchase
     last_customer_purchase_dat = clw_df.groupby("customer_id")["t_dat"].max()
     clw_df["max_cust_dat"] = clw_df["customer_id"].map(last_customer_purchase_dat)
-    clw_df["diff_cust_dat"] = clw_df["max_cust_dat"] - clw_df["t_dat"]
-    clw_pairs_df = clw_df.query(f"diff_cust_dat <= {num_pair_weeks * 7 - 1}").copy()
-    clw_df = clw_df.query(f"diff_cust_dat <= {num_weeks * 7 - 1}").copy()
+    clw_df["sample"] = 1
 
-    # count purchased during that period
     clw_df = (
-        clw_df.groupby(["customer_id", "article_id"])["t_dat"].count().reset_index()
-    )
-    clw_df.columns = [
-        "customer_id",
-        "article_id",
-        "clw_count",
-    ]
-
-    clw_pairs_df = (
-        clw_pairs_df.groupby(["customer_id", "article_id"])["t_dat"]
-        .count()
+        clw_df.groupby(["customer_id", "article_id"])
+        .agg(
+            {
+                "max_cust_dat": "max",
+                "sample": "count",
+                "t_dat": "max",
+            }
+        )
+        .rename(
+            columns={
+                "max_cust_dat": "last_c_purchase_date",
+                "sample": "ca_count",
+                "t_dat": "last_ca_purchase_date",
+            }
+        )
         .reset_index()
     )
-    clw_pairs_df.columns = [
-        "customer_id",
-        "article_id",
-        "clw_count",
-    ]
+    clw_df["last_ca_purchase_diff"] = (
+        clw_df["last_c_purchase_date"] - clw_df["last_ca_purchase_date"]
+    )
+
+    clw_pairs_df = clw_df.query(
+        f"last_ca_purchase_diff <= {num_pair_weeks * 7 - 1}"
+    ).copy()
+    clw_df = clw_df.query(f"last_ca_purchase_diff <= {num_weeks * 7 - 1}").copy()
 
     del last_customer_purchase_dat
 
@@ -94,9 +98,16 @@ def create_last_customer_weeks_and_pairs(
     #  - sources' last week(s) purchase count
     #  - count and percent of customer pairs (see generating code for details)
     clw_pairs_df = clw_pairs_df.merge(article_pairs_df, on="article_id")
+
     clw_pairs_df = (
         clw_pairs_df.groupby(["customer_id", "pair_article_id"])[
-            ["clw_count", "customer_count", "percent_customers"]
+            [
+                "ca_count",
+                "last_ca_purchase_date",
+                "last_ca_purchase_diff",
+                "customer_count",
+                "percent_customers",
+            ]
         ]
         .max()
         .reset_index()
@@ -104,7 +115,9 @@ def create_last_customer_weeks_and_pairs(
     clw_pairs_df.columns = [
         "customer_id",
         "article_id",
-        "pair_clw_count",
+        "pair_ca_count",
+        "pair_last_ca_purchase_date",
+        "pair_last_ca_purchase_diff",
         "pair_customer_count",
         "pair_percent_customers",
     ]
@@ -115,11 +128,19 @@ def create_last_customer_weeks_and_pairs(
         ["customer_id", "article_id"]
     ].drop_duplicates()
 
-    clw_df = clw_df.set_index(["customer_id", "article_id"])[["clw_count"]].copy()
+    clw_df = clw_df.set_index(["customer_id", "article_id"])[
+        ["ca_count", "last_ca_purchase_date", "last_ca_purchase_diff"]
+    ].copy()
     features = (["customer_id", "article_id"], clw_df)
 
     clw_pairs_df = clw_pairs_df.set_index(["customer_id", "article_id"])[
-        ["pair_clw_count", "pair_customer_count", "pair_percent_customers"]
+        [
+            "pair_ca_count",
+            "pair_last_ca_purchase_date",
+            "pair_last_ca_purchase_diff",
+            "pair_customer_count",
+            "pair_percent_customers",
+        ]
     ].copy()
     pair_features = (["customer_id", "article_id"], clw_pairs_df)
 
