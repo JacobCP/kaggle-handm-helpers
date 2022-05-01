@@ -163,3 +163,72 @@ def create_cust_hier_features(transactions_df, articles_df, hier_cols, features_
             "float32"
         )
         features_db[hier_portion_column] = (["customer_id", hier_col], cust_hier)
+
+
+def create_price_features(transactions_df, features_db):
+    ###################
+    # article_prices
+    ###################
+    article_prices_df = transactions_df.groupby("article_id")[["price"]].max()
+    article_prices_df.columns = ["max_price"]
+
+    last_week = transactions_df["week_number"].max()
+    last_week_t_df = transactions_df.query(f"week_number == {last_week}")
+    last_week_prices = transactions_df.groupby("article_id")["price"].mean()
+    article_prices_df["last_week_price"] = last_week_prices
+
+    article_prices_df = article_prices_df.dropna()
+
+    article_prices_df["last_week_price_ratio"] = (
+        article_prices_df["last_week_price"] / article_prices_df["max_price"]
+    )
+
+    features_db["article_prices"] = (["article_id"], article_prices_df)
+
+    ############################
+    # customer price features
+    ############################
+    cust_prices_df = transactions_df[
+        ["customer_id", "article_id", "week_number", "price"]
+    ].copy()
+
+    cust_prices_df["max_article_price"] = cust_prices_df["article_id"].map(
+        cust_prices_df.groupby(["article_id"])["price"].max()
+    )
+
+    # for each purchase, the previous article/week price, and price discount
+    article_week_price_df = (
+        cust_prices_df.groupby(["week_number", "article_id"])["price"]
+        .mean()
+        .reset_index()
+    )
+    article_week_price_df.columns = [
+        "week_number",
+        "article_id",
+        "article_previous_week_price",
+    ]
+    article_week_price_df[
+        "week_number"
+    ] += 1  # for the next week, the price is from the previous week
+    cust_prices_df = cust_prices_df.merge(
+        article_week_price_df, on=["week_number", "article_id"]
+    )
+    cust_prices_df["article_previous_week_price_ratio"] = (
+        cust_prices_df["article_previous_week_price"]
+        / cust_prices_df["max_article_price"]
+    )
+    cust_prices_df = cust_prices_df.groupby("customer_id")[
+        [
+            "max_article_price",
+            "article_previous_week_price",
+            "article_previous_week_price_ratio",
+        ]
+    ].mean()
+    cust_prices_df.columns = [
+        "cust_avg_max_price",
+        "cust_avg_last_week_price",
+        "cust_avg_last_week_price_ratio",
+    ]
+    cust_prices_df = cust_prices_df.dropna()
+
+    features_db["cust_price_features"] = (["customer_id"], cust_prices_df)
