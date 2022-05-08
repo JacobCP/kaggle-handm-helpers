@@ -288,11 +288,20 @@ def add_features_to_candidates(candidates_df, features, customers_df, articles_d
 
 
 def filter_candidates(candidates, transactions_df, **kwargs):
-    recent_art_weeks = kwargs.get("filter_recent_art_weeks", None)
-    if recent_art_weeks:
-        recent_articles = transactions_df.query(
-            f"week_number >= {kwargs['label_week'] - recent_art_weeks}"
-        )["article_id"].drop_duplicates()
-        candidates = candidates[candidates["article_id"].isin(recent_articles)].copy()
+    recent_art_weeks = kwargs["filter_recent_art_weeks"]
+    recent_articles = transactions_df.query(
+        f"week_number >= {kwargs['label_week'] - recent_art_weeks}"
+    )["article_id"]
+
+    num_articles = kwargs.get("filter_num_articles", None)
+    if num_articles is None:
+        recent_articles = recent_articles.drop_duplicates()
+    else:
+        recent_item_counts = recent_articles.value_counts()
+        most_popular_items = recent_item_counts[:num_articles].index
+        most_popular_items = most_popular_items.to_pandas().to_list()
+        recent_articles = most_popular_items
+
+    candidates = candidates[candidates["article_id"].isin(recent_articles)].copy()
 
     return candidates
