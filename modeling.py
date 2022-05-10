@@ -1,7 +1,12 @@
 import copy
+import pickle as pkl
+from datetime import datetime
 import cudf
 import pandas as pd
 import numpy as np
+import lightgbm
+from lightgbm import LGBMRanker
+from sklearn.metrics import roc_auc_score
 
 
 def get_group_lengths(df):
@@ -213,3 +218,189 @@ def prepare_train_eval_modeling_dfs(t, c, a, cand_features_func, **params):
         eval_y,
         eval_truth_df,
     )
+
+
+def full_cv_run(t, c, a, cand_features_func, score_func, **kwargs):
+    # load training data
+    train_eval_dfs = prepare_train_eval_modeling_dfs(
+        t, c, a, cand_features_func, **kwargs
+    )
+    (
+        train_ids_df,
+        train_X,
+        train_group_lengths,
+        train_y,
+        train_truth_df,
+        eval_ids_df,
+        eval_X,
+        eval_group_lengths,
+        eval_y,
+        eval_truth_df,
+    ) = train_eval_dfs
+
+    model = LGBMRanker(**(kwargs["lgbm_params"]), seed=42)
+
+    eval_set = [(train_X, train_y), (eval_X, eval_y)]
+    eval_group = [train_group_lengths, eval_group_lengths]
+    eval_names = ["train", "validation"]
+
+    le_callback = lightgbm.log_evaluation(kwargs["log_evaluation"])
+    es_callback = lightgbm.early_stopping(kwargs["early_stopping"])
+
+    model.fit(
+        train_X,
+        train_y,
+        eval_set=eval_set,
+        eval_names=eval_names,
+        eval_group=eval_group,
+        eval_metric="MAP",
+        eval_at=kwargs["eval_at"],
+        callbacks=[le_callback, es_callback],
+        group=train_group_lengths,
+    )
+
+    if kwargs.get("save_model", False):
+        with open(f"model_{kwargs['label_week']}", "wb") as f:
+            pkl.dump(model, f)
+
+    # train predictions and scores
+    train_pred = model.predict(train_X)
+    print("Train AUC {:.4f}".format(roc_auc_score(train_y, train_pred)))
+    print("Train score: ", score_func(train_ids_df, train_pred, train_truth_df))
+
+    del train_X, train_y, train_group_lengths, train_truth_df, train_pred
+
+    # evaluation predictions and scores
+    eval_pred = pred_in_batches(model, eval_X)
+
+    print("Eval AUC {:.4f}".format(roc_auc_score(eval_y, eval_pred)))
+    eval_score = score_func(eval_ids_df, eval_pred, eval_truth_df)
+    print("Eval score:", eval_score)
+
+    # print feature importances
+    feature_importance_dict = dict(
+        zip(list(eval_X.columns), list(model.feature_importances_))
+    )
+    feature_importance_series = cudf.Series(feature_importance_dict).sort_values()
+    print("\n")
+    print(feature_importance_series)
+
+    return eval_score
+
+
+def run_all_cvs(
+    t, c, a, cand_features_func, score_func, cv_weeks=[102, 103, 104], **params
+):
+    cv_scores = []
+    total_duration = datetime.now() - datetime.now()
+
+    for cv_week in cv_weeks:
+        starting_time = datetime.now()
+
+        cv_params = copy.deepcopy(params)
+        cv_params.update({"label_week": cv_week})
+        cv_score = full_cv_run(t, c, a, cand_features_func, score_func, **cv_params)
+
+        cv_scores.append(cv_score)
+        duration = datetime.now() - starting_time
+        total_duration += duration
+        print(f"Finished cv of week {cv_week} in {duration}. Score: {cv_score}\n")
+
+    average_scores = round(np.mean(cv_scores), 5)
+    print(
+        f"Finished all {len(cv_weeks)} cvs in {total_duration}. "
+        f"Average cv score: {average_scores}"
+    )
+
+    return average_scores
+
+
+def full_sub_train_run(t, c, a, cand_features_func, score_func, **kwargs):
+    (
+        train_ids_df,
+        train_X,
+        train_group_lengths,
+        train_y,
+        train_truth_df,
+    ) = prepare_concat_train_modeling_dfs(t, c, a, cand_features_func, **kwargs)
+
+    model = LGBMRanker(**(kwargs["lgbm_params"]), seed=42)
+
+    eval_set = [(train_X, train_y)]
+    eval_group = [train_group_lengths]
+    eval_names = ["train"]
+
+    le_callback = lightgbm.log_evaluation(1)
+
+    model.fit(
+        train_X,
+        train_y,
+        eval_set=eval_set,
+        eval_names=eval_names,
+        eval_group=eval_group,
+        eval_metric="MAP",
+        eval_at=kwargs["eval_at"],
+        callbacks=[le_callback],
+        group=train_group_lengths,
+    )
+
+    # train predictions and scores
+    train_pred = model.predict(train_X)
+    print("Train AUC {:.4f}".format(roc_auc_score(train_y, train_pred)))
+    print("Train score: ", score_func(train_ids_df, train_pred, train_truth_df))
+
+    del train_X, train_y, train_group_lengths, train_truth_df, train_pred
+
+    if kwargs.get("save_model", False):
+        with open(f"model_{kwargs['label_week']}", "wb") as f:
+            pkl.dump(model, f)
+
+
+def full_sub_predict_run(t, c, a, cand_features_func, **kwargs):
+    customer_batches = []
+
+    num_customers = len(c)
+    half_point = num_customers // 2
+
+    customer_batches.append(c[:half_point]["customer_id"].to_pandas().to_list())
+    customer_batches.append(c[half_point:]["customer_id"].to_pandas().to_list())
+
+    batch_preds = []
+    for idx, customer_batch in enumerate(customer_batches):
+        print(
+            f"generating candidates/features for batch #{idx+1} of {len(customer_batches)}"
+        )
+        sub_ids_df, sub_X = prepare_prediction_dfs(
+            t, c, a, cand_features_func, customer_batch=customer_batch, **kwargs
+        )
+
+        print(
+            f"candidate/features shape of batch: ({sub_X.shape[0]:,}, {sub_X.shape[1]})",
+        )
+
+        prediction_models = kwargs.get("prediction_models")
+        model_nums = len(prediction_models)
+
+        first_model_path = prediction_models[0]
+        with open(first_model_path, "rb") as f:
+            first_model = pkl.load(f)
+
+        print(f"predicting with '{first_model_path}'")
+        sub_pred = pred_in_batches(first_model, sub_X) / model_nums
+        del first_model
+
+        for model_path in prediction_models[1:]:
+            with open(model_path, "rb") as f:
+                model = pkl.load(f)
+                print(f"predicting with '{model_path}'")
+                sub_pred2 = pred_in_batches(model, sub_X)
+                del model
+                sub_pred += sub_pred2 / model_nums
+
+        batch_preds.append(create_predictions(sub_ids_df, sub_pred))
+
+        del sub_ids_df, sub_X, sub_pred
+
+    predictions = cudf.concat(batch_preds)
+
+    return predictions
