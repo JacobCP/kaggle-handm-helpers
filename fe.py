@@ -232,3 +232,122 @@ def create_price_features(transactions_df, features_db):
     cust_prices_df = cust_prices_df.dropna()
 
     features_db["cust_price_features"] = (["customer_id"], cust_prices_df)
+
+
+def create_cust_t_features(transactions_df, a, features_db):
+    ctf_df = transactions_df.groupby("customer_id")[["sales_channel_id"]].mean()
+    ctf_df.columns = ["cust_sales_channel"]
+    ctf_df["cust_sales_channel"] = ctf_df["cust_sales_channel"].astype("float32")
+    ctf_df["cust_sales_channel"] = ctf_df["cust_sales_channel"].round(2) - 1.0
+
+    ctf_df["cust_t_counts"] = (
+        transactions_df.groupby("customer_id")["sales_channel_id"]
+        .count()
+        .astype("float32")
+    )
+    ctf_df["cust_u_t_counts"] = (
+        transactions_df.groupby("customer_id")["article_id"].nunique().astype("float32")
+    )
+
+    sub_t_df = transactions_df[["customer_id", "article_id"]].copy()
+    sub_t_df["index_group_name"] = sub_t_df["article_id"].map(
+        a.set_index("article_id")["index_group_name"]
+    )
+    gender_dict = {
+        "Ladieswear": 1,
+        "Baby/Children": 0.5,
+        "Menswear": 0,
+        "Sport": 0.5,
+        "Divided": 0.5,
+    }
+    sub_t_df["article_gender"] = (
+        sub_t_df["index_group_name"].astype("str").map(gender_dict)
+    )
+
+    sub_t_df["section_name"] = sub_t_df["article_id"].map(
+        a.set_index("article_id")["section_name"].astype(str)
+    )
+    sub_t_df.loc[sub_t_df["section_name"] == "Ladies H&M Sport", "article_gender"] = 1
+    sub_t_df.loc[sub_t_df["section_name"] == "Men H&M Sport", "article_gender"] = 0
+    ctf_df["cust_gender"] = sub_t_df.groupby("customer_id")["article_gender"].mean()
+
+    features_db["cust_t_features"] = (["customer_id"], ctf_df)
+
+
+def create_art_t_features(transactions_df, features_db):
+    atf_df = transactions_df.groupby("article_id")[["sales_channel_id"]].mean()
+    atf_df.columns = ["art_sales_channel"]
+    atf_df["art_sales_channel"] = atf_df["art_sales_channel"].astype("float32")
+    atf_df["art_sales_channel"] = atf_df["art_sales_channel"].round(2) - 1.0
+
+    atf_df["art_t_counts"] = (
+        transactions_df.groupby("article_id")["sales_channel_id"]
+        .count()
+        .astype("float32")
+    )
+    atf_df["art_u_t_counts"] = (
+        transactions_df.groupby("article_id")["customer_id"].nunique().astype("float32")
+    )
+
+    features_db["art_t_features"] = (["article_id"], atf_df)
+
+
+def create_cust_features(customers_df, features_db):
+    cust_df = customers_df.set_index("customer_id")[["age"]]
+    cust_df["age"] = cust_df["age"].astype("int16").fillna(-1)
+
+    features_db["cust_features"] = (["customer_id"], cust_df)
+
+
+def create_article_cust_features(transactions_df, customers_df, features_db):
+    art_cust_df = transactions_df[["article_id", "customer_id"]].drop_duplicates()
+    cust_age = customers_df.set_index("customer_id")["age"]
+    art_cust_df["cust_age"] = art_cust_df["customer_id"].map(cust_age)
+    art_cust_df = art_cust_df.groupby("article_id")[["cust_age"]].mean()
+    art_cust_df.columns = ["art_cust_age"]
+
+    art_cust_df["art_cust_age"] = art_cust_df["art_cust_age"].astype("int16").fillna(-1)
+
+    features_db["article_customer_age"] = (["article_id"], art_cust_df)
+
+
+def create_lag_features(transactions_df, articles_df, lag_days, features_db):
+    last_date = transactions_df["t_dat"].max()
+
+    article_counts_df = cudf.DataFrame(index=articles_df["article_id"])
+    for lag_day in lag_days:
+        # column name
+        col_name = f"last_{lag_day}_days_count"
+
+        # column values
+        t_df_filtered = transactions_df[
+            transactions_df["t_dat"] > (last_date - lag_day)
+        ]
+        lag_values = t_df_filtered.groupby("article_id")["customer_id"].nunique()
+
+        # putting them in
+        article_counts_df[col_name] = lag_values
+        article_counts_df[col_name] = article_counts_df[col_name]
+        article_counts_df[col_name] = article_counts_df[col_name].astype("float32")
+
+    features_db["article_counts"] = (["article_id"], article_counts_df)
+
+
+def create_rebuy_features(transactions_df, features_db):
+    duplicate_counts = transactions_df.groupby(["customer_id", "article_id"])[
+        "week_number"
+    ].count()
+    duplicate_counts = duplicate_counts.sort_values().reset_index()
+    duplicate_counts.columns = ["customer_id", "article_id", "buy_count"]
+    rebuy_ratio_df = duplicate_counts.groupby("article_id")[["buy_count"]].mean()
+    rebuy_ratio_df.columns = ["rebuy_count_ratio"]
+    rebuy_ratio_df["rebuy_count_ratio"] = rebuy_ratio_df["rebuy_count_ratio"].astype(
+        "float32"
+    )
+    duplicate_counts["buy_count"] = duplicate_counts["buy_count"].replace(1, 0)
+    duplicate_counts["buy_count"][duplicate_counts["buy_count"] > 1] = 1
+    rebuy_ratio_df["rebuy_ratio"] = duplicate_counts.groupby("article_id")[
+        "buy_count"
+    ].mean()
+
+    features_db["rebuy_features"] = (["article_id"], rebuy_ratio_df)

@@ -253,6 +253,68 @@ def create_popular_article_cand(
     return popular_articles_cand, article_purchase_features
 
 
+def create_age_bucket_candidates(
+    transactions_df, customers_df, age_buckets, customers=None, articles=12
+):
+    # get transactions we're working with
+    working_t_df = transactions_df.copy()
+    working_t_df = working_t_df.drop_duplicates(
+        ["customer_id", "article_id", "week_number"]
+    )
+
+    # create the buckets
+    buckets_df = (
+        customers_df[["customer_id"]].drop_duplicates().set_index("customer_id")
+    )
+    buckets_df["age"] = customers_df.set_index("customer_id").age
+    buckets_df["age_bucket"] = pd.qcut(
+        buckets_df["age"].to_pandas(), age_buckets
+    ).cat.codes
+
+    # choose bucket
+    selected_buckets = ["age_bucket"]
+
+    # add the buckets to the transactions
+    working_t_df = working_t_df.merge(
+        buckets_df[selected_buckets].reset_index(), on="customer_id"
+    )
+
+    # get the popularity
+    last_week = working_t_df["week_number"].max()
+    pi_df = (
+        working_t_df.query(f"week_number=={last_week}")
+        .groupby(selected_buckets + ["article_id"])["t_dat"]
+        .count()
+        .reset_index()
+        .sort_values(selected_buckets + ["t_dat"], ascending=False)
+    )
+    pi_df = cudf_groupby_head(pi_df, selected_buckets, articles)
+
+    # candidates - merge customer with their bucket
+    can_df = buckets_df.reset_index()[["customer_id"] + selected_buckets].merge(
+        pi_df, on=selected_buckets
+    )
+    can_df.columns = ["customer_id", "age_bucket", "article_id", "article_bucket_count"]
+
+    # features dfs
+    buckets_df = buckets_df[["age_bucket"]].copy()
+    bucket_counts_df = can_df[
+        ["customer_id", "article_id", "article_bucket_count"]
+    ].copy()
+    bucket_counts_df = bucket_counts_df.set_index(["customer_id", "article_id"])
+
+    # candidates_df
+    can_df = can_df[["customer_id", "article_id"]]
+    if customers is not None:
+        can_df = can_df[can_df["customer_id"].isin(customers)]
+
+    return (
+        can_df,
+        (["customer_id"], buckets_df),
+        (["customer_id", "article_id"], bucket_counts_df),
+    )
+
+
 def add_features_to_candidates(candidates_df, features, customers_df, articles_df):
     """
     adds fields needed to merge in features
