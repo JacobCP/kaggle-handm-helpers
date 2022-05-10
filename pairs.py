@@ -90,6 +90,5 @@ def create_pairs(transactions_df, week_number, pairs_per_item, verbose=True):
         batch_pairs_dfs.append(batch_pairs_df)
 
     all_article_pairs_df = cudf.concat(batch_pairs_dfs)
-    print(len(all_article_pairs_df))
 
     return all_article_pairs_df
