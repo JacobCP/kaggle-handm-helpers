@@ -12,7 +12,7 @@ def cudf_groupby_head(df, groupby, head_count):
     return head_df
 
 
-def create_pairs(transactions_df, week_number, pairs_per_item):
+def create_pairs(transactions_df, week_number, pairs_per_item, verbose=True):
     # get the dfs
     working_t_df = transactions_df[["customer_id", "article_id", "week_number"]].copy()
 
@@ -33,7 +33,8 @@ def create_pairs(transactions_df, week_number, pairs_per_item):
 
     # start the loop
     for i in range(0, len(unique_articles), batch_size):
-        print(f"processing article #{i:,} to #{i+batch_size:,}")
+        if verbose:
+            print(f"processing article #{i:,} to #{i+batch_size:,}")
 
         # take batch of articles/transactions
         batch_articles = unique_articles[i : i + batch_size]
