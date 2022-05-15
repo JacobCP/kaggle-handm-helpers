@@ -174,7 +174,7 @@ def create_price_features(transactions_df, features_db):
 
     last_week = transactions_df["week_number"].max()
     last_week_t_df = transactions_df.query(f"week_number == {last_week}")
-    last_week_prices = transactions_df.groupby("article_id")["price"].mean()
+    last_week_prices = last_week_t_df.groupby("article_id")["price"].mean()
     article_prices_df["last_week_price"] = last_week_prices
 
     article_prices_df = article_prices_df.dropna()
@@ -182,6 +182,7 @@ def create_price_features(transactions_df, features_db):
     article_prices_df["last_week_price_ratio"] = (
         article_prices_df["last_week_price"] / article_prices_df["max_price"]
     )
+    article_prices_df = article_prices_df.astype("float32")
 
     features_db["article_prices"] = (["article_id"], article_prices_df)
 
@@ -230,6 +231,7 @@ def create_price_features(transactions_df, features_db):
         "cust_avg_last_week_price_ratio",
     ]
     cust_prices_df = cust_prices_df.dropna()
+    cust_prices_df = cust_prices_df.astype("float32")
 
     features_db["cust_price_features"] = (["customer_id"], cust_prices_df)
 
@@ -349,5 +351,6 @@ def create_rebuy_features(transactions_df, features_db):
     rebuy_ratio_df["rebuy_ratio"] = duplicate_counts.groupby("article_id")[
         "buy_count"
     ].mean()
+    rebuy_ratio_df = rebuy_ratio_df.astype("float32")
 
     features_db["rebuy_features"] = (["article_id"], rebuy_ratio_df)
