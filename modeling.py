@@ -415,3 +415,19 @@ def full_sub_predict_run(t, c, a, cand_features_func, **kwargs):
     predictions = cudf.concat(batch_preds)
 
     return predictions
+
+
+def categorical_cols_to_float(df):
+    """
+    to support using cuML's FIL
+    returns the idxs so they can be passed to the model
+    """
+    col_names = list(df.columns)
+    categorical_col_names = list(df.select_dtypes(include=["category"]).columns)
+
+    categorical_col_idxs = []
+    for col_name in categorical_col_names:
+        categorical_col_idxs.append(col_names.index(col_name))
+        df[col_name] = df[col_name].cat.codes.astype("float32")
+
+    return categorical_col_idxs
